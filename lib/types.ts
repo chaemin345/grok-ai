@@ -21,6 +21,5 @@ export interface AnalyzeResult {
   footnotes: { number: number; reason: string; lawName?: string }[];
   timestamp: string;
   maskedPreview: string;
-  /** 문맥교정 레이어 사용 여부 */
   contextCheckEnabled?: boolean;
 }

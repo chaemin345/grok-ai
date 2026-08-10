@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import crypto from "node:crypto";
-import { analyzeTextForIssues, maskPersonalInfo } from "@/lib/analysis";
+import {
+  analyzeTextForIssues,
+  buildHighlight,
+  calcScore,
+  maskPersonalInfo,
+} from "@/lib/analysis";
 import {
   checkContextLogic,
   contextFindingsToIssues,
@@ -41,43 +46,6 @@ function rateLimit(key: string) {
   return { ok: true, remaining: limit - bucket.count };
 }
 
-/** 이슈 목록으로 하이라이트 HTML + 각주 재생성 */
-function buildHighlight(text: string, issues: Issue[]) {
-  const sorted = [...issues]
-    .filter((i) => i.end > i.start)
-    .sort((a, b) => b.start - a.start);
-
-  let highlighted = text;
-  const footnotes: AnalyzeResult["footnotes"] = [];
-  let num = 0;
-
-  for (const issue of sorted) {
-    num += 1;
-    const safe = issue.originalText
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    const mark = `<mark class="lunia-error">${safe}</mark><sup class="fn-ref">[${num}]</sup>`;
-    highlighted =
-      highlighted.slice(0, issue.start) + mark + highlighted.slice(issue.end);
-    footnotes.unshift({
-      number: num,
-      reason: issue.reason,
-      lawName: issue.lawName,
-    });
-  }
-
-  footnotes.reverse();
-  footnotes.forEach((f, i) => {
-    f.number = i + 1;
-  });
-
-  return {
-    highlightedHtml: highlighted.replace(/\n/g, "<br/>"),
-    footnotes,
-  };
-}
-
 export async function POST(req: Request) {
   const ip = getIp(req);
   const rl = rateLimit(ip);
@@ -89,7 +57,7 @@ export async function POST(req: Request) {
     const body = (await req.json()) as ReqBody;
     const cleanText = (body.text ?? "").trim();
 
-    if (cleanText.length < 10 || cleanText.length > 80000) {
+    if (cleanText.length < 10 || cleanText.length > 80_000) {
       return NextResponse.json({ error: "invalid_text_length" }, { status: 400 });
     }
 
@@ -97,12 +65,12 @@ export async function POST(req: Request) {
     const sha = crypto.createHash("sha256").update(masked).digest("hex").slice(0, 16);
     const started = Date.now();
 
-    // 1) 컴퓨터: 법령 인용 대조 (밑줄+각주의 핵심)
+    // 1) 컴퓨터: 법령 인용 대조
     const base = await analyzeTextForIssues(cleanText);
     let allIssues: Issue[] = [...base.issues];
     let contextEnabled = false;
 
-    // 2) 선택: 문맥·논리 이상만 Claude 레이어
+    // 2) 선택: 문맥·논리 (Claude – 키 연결 시)
     if (body.enableContextCheck) {
       const ctx = await checkContextLogic({
         text: cleanText,
@@ -116,13 +84,8 @@ export async function POST(req: Request) {
 
     const { highlightedHtml, footnotes } = buildHighlight(cleanText, allIssues);
 
-    const score = Math.max(
-      0,
-      100 - allIssues.reduce((s, i) => s + (i.severity === "critical" ? 25 : i.severity === "major" ? 15 : 5), 0)
-    );
-
     const result: AnalyzeResult = {
-      score,
+      score: calcScore(allIssues),
       issues: allIssues,
       highlightedHtml,
       footnotes,

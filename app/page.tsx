@@ -25,8 +25,8 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "분석 실패");
       setResult(data);
-    } catch (e: any) {
-      setError(e.message || "오류가 발생했습니다.");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -36,8 +36,8 @@ export default function Home() {
     <main style={{ maxWidth: 880, margin: "40px auto", padding: "0 20px" }}>
       <h1 style={{ fontSize: 26, fontWeight: 700 }}>Grok AI – 법률 보고서 검증</h1>
       <p style={{ color: "#666", marginBottom: 16 }}>
-        잘못된 법령 인용에 <strong>빨간 밑줄</strong>을 치고, <strong>각주</strong>로 이유를 설명합니다.
-        고치지 않습니다.
+        잘못된 법령 인용에 <strong>빨간 밑줄</strong>을 치고,{" "}
+        <strong>각주</strong>로 이유를 설명합니다. 문장을 고치지 않습니다.
       </p>
 
       <textarea
@@ -55,13 +55,22 @@ export default function Home() {
         }}
       />
 
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "#444", fontSize: 14 }}>
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginTop: 12,
+          color: "#444",
+          fontSize: 14,
+        }}
+      >
         <input
           type="checkbox"
           checked={enableContext}
           onChange={(e) => setEnableContext(e.target.checked)}
         />
-        문맥·논리 검사 (Claude Pro 연동 예정 — 키 없으면 비활성)
+        문맥·논리 검사 (Claude API 연결 후 동작)
       </label>
 
       <button
@@ -90,7 +99,11 @@ export default function Home() {
             <span
               style={{
                 color:
-                  result.score >= 80 ? "#16a34a" : result.score >= 50 ? "#ca8a04" : "#dc2626",
+                  result.score >= 80
+                    ? "#16a34a"
+                    : result.score >= 50
+                      ? "#ca8a04"
+                      : "#dc2626",
               }}
             >
               {result.score}
@@ -116,7 +129,9 @@ export default function Home() {
 
           {result.footnotes.length > 0 && (
             <>
-              <h2 style={{ fontSize: 17, marginTop: 28, marginBottom: 8 }}>각주 (왜 밑줄을 쳤는지)</h2>
+              <h2 style={{ fontSize: 17, marginTop: 28, marginBottom: 8 }}>
+                각주 (왜 밑줄을 쳤는지)
+              </h2>
               <ol style={{ paddingLeft: 20, lineHeight: 1.65 }}>
                 {result.footnotes.map((fn) => (
                   <li key={fn.number} style={{ marginBottom: 8 }}>

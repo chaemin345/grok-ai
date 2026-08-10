@@ -7,10 +7,11 @@ export interface LawSearchItem {
   법령약칭명?: string;
 }
 
+/** 국가법령정보센터 법령명 검색 */
 export async function searchLaw(query: string): Promise<LawSearchItem[]> {
   const oc = process.env.LAW_API_OC;
   if (!oc) {
-    console.warn("LAW_API_OC 미설정 → mock 모드");
+    console.warn("[law-api] LAW_API_OC 없음 → mock");
     return mockSearch(query);
   }
 
@@ -29,24 +30,28 @@ export async function searchLaw(query: string): Promise<LawSearchItem[]> {
     const list = data?.LawSearch?.law ?? data?.law ?? [];
     return Array.isArray(list) ? list : [list].filter(Boolean);
   } catch (e) {
-    console.error("law search error", e);
+    console.error("[law-api] search error", e);
     return mockSearch(query);
   }
 }
 
 function mockSearch(query: string): LawSearchItem[] {
-  const known = ["민법", "형법", "상법", "근로기준법", "개인정보 보호법", "저작권법"];
-  const hit = known.find((k) => query.includes(k));
-  if (hit) {
-    return [{ 법령명한글: hit, 법령ID: "000000", 법령일련번호: "000000", 법령약칭명: hit }];
-  }
-  return [];
-}
-
-export function toJoCode(articleText: string): string | null {
-  const m = articleText.match(/제\s*(\d+)\s*조(?:의\s*(\d+))?/);
-  if (!m) return null;
-  const main = m[1].padStart(4, "0");
-  const sub = (m[2] ?? "00").padStart(2, "0");
-  return main + sub;
+  const known = [
+    "민법",
+    "형법",
+    "상법",
+    "근로기준법",
+    "개인정보 보호법",
+    "저작권법",
+  ];
+  const hit = known.find((k) => query.includes(k) || k.includes(query));
+  if (!hit) return [];
+  return [
+    {
+      법령명한글: hit,
+      법령ID: "000000",
+      법령일련번호: "000000",
+      법령약칭명: hit,
+    },
+  ];
 }
