@@ -8,6 +8,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [error, setError] = useState("");
+  const [enableContext, setEnableContext] = useState(false);
 
   async function handleAnalyze() {
     if (!text.trim()) return;
@@ -19,7 +20,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, enableContextCheck: enableContext }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "분석 실패");
@@ -34,14 +35,15 @@ export default function Home() {
   return (
     <main style={{ maxWidth: 880, margin: "40px auto", padding: "0 20px" }}>
       <h1 style={{ fontSize: 26, fontWeight: 700 }}>Grok AI – 법률 보고서 검증</h1>
-      <p style={{ color: "#666", marginBottom: 20 }}>
-        보고서를 붙여넣으면 국가법령정보센터 API와 대조해 잘못된 법령 인용을 밑줄 + 각주로 표시합니다.
+      <p style={{ color: "#666", marginBottom: 16 }}>
+        잘못된 법령 인용에 <strong>빨간 밑줄</strong>을 치고, <strong>각주</strong>로 이유를 설명합니다.
+        고치지 않습니다.
       </p>
 
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="예: 민법 제750조에 따라 불법행위 책임이 발생한다. 존재하지않는법 제1조는 적용되지 않는다."
+        placeholder="예: 민법 제750조에 따라 책임이 있다. 존재하지않는가상법 제99조는 적용되지 않는다."
         rows={12}
         style={{
           width: "100%",
@@ -52,6 +54,15 @@ export default function Home() {
           resize: "vertical",
         }}
       />
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "#444", fontSize: 14 }}>
+        <input
+          type="checkbox"
+          checked={enableContext}
+          onChange={(e) => setEnableContext(e.target.checked)}
+        />
+        문맥·논리 검사 (Claude Pro 연동 예정 — 키 없으면 비활성)
+      </label>
 
       <button
         onClick={handleAnalyze}
@@ -67,7 +78,7 @@ export default function Home() {
           cursor: loading ? "not-allowed" : "pointer",
         }}
       >
-        {loading ? "분석 중…" : "법령 검증 실행"}
+        {loading ? "검증 중…" : "법령 검증 실행"}
       </button>
 
       {error && <p style={{ color: "crimson", marginTop: 14 }}>{error}</p>}
@@ -76,20 +87,28 @@ export default function Home() {
         <section style={{ marginTop: 36 }}>
           <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>
             점수:{" "}
-            <span style={{ color: result.score >= 80 ? "#16a34a" : result.score >= 50 ? "#ca8a04" : "#dc2626" }}>
+            <span
+              style={{
+                color:
+                  result.score >= 80 ? "#16a34a" : result.score >= 50 ? "#ca8a04" : "#dc2626",
+              }}
+            >
               {result.score}
             </span>
-            <span style={{ fontSize: 14, color: "#666", marginLeft: 12 }}>이슈 {result.issues.length}건</span>
+            <span style={{ fontSize: 14, color: "#666", marginLeft: 12 }}>
+              이슈 {result.issues.length}건
+              {result.contextCheckEnabled ? " · 문맥검사 ON" : ""}
+            </span>
           </div>
 
-          <h2 style={{ fontSize: 17, marginBottom: 8 }}>하이라이트 결과</h2>
+          <h2 style={{ fontSize: 17, marginBottom: 8 }}>밑줄 결과</h2>
           <div
             style={{
               background: "#fafafa",
               border: "1px solid #eee",
               borderRadius: 8,
               padding: 18,
-              lineHeight: 1.7,
+              lineHeight: 1.75,
               fontSize: 15,
             }}
             dangerouslySetInnerHTML={{ __html: result.highlightedHtml }}
@@ -97,10 +116,10 @@ export default function Home() {
 
           {result.footnotes.length > 0 && (
             <>
-              <h2 style={{ fontSize: 17, marginTop: 28, marginBottom: 8 }}>각주</h2>
-              <ol style={{ paddingLeft: 20, lineHeight: 1.6 }}>
+              <h2 style={{ fontSize: 17, marginTop: 28, marginBottom: 8 }}>각주 (왜 밑줄을 쳤는지)</h2>
+              <ol style={{ paddingLeft: 20, lineHeight: 1.65 }}>
                 {result.footnotes.map((fn) => (
-                  <li key={fn.number} style={{ marginBottom: 6 }}>
+                  <li key={fn.number} style={{ marginBottom: 8 }}>
                     <strong>[{fn.number}]</strong> {fn.reason}
                   </li>
                 ))}
@@ -114,11 +133,13 @@ export default function Home() {
         mark.lunia-error {
           background: #fecaca;
           text-decoration: underline wavy #dc2626;
+          text-decoration-thickness: 2px;
           padding: 0 2px;
         }
-        sup {
+        sup.fn-ref {
           color: #dc2626;
-          font-weight: 600;
+          font-weight: 700;
+          margin-left: 1px;
         }
       `}</style>
     </main>
