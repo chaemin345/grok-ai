@@ -70,7 +70,7 @@ export default function Home() {
           checked={enableContext}
           onChange={(e) => setEnableContext(e.target.checked)}
         />
-        문맥·논리 검사 (Claude API 연결 후 동작)
+        문맥·논리 검사 (Claude API 키 필요)
       </label>
 
       <button
