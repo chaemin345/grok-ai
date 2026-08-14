@@ -12,7 +12,7 @@ import {
 } from "@/lib/context-check";
 import type { AnalyzeResult, Issue } from "@/lib/types";
 
-type ReqBody = { text: string; enableContextCheck?: boolean };
+type ReqBody = { text: string; enableContextCheck?: boolean; apiKey?: string };
 
 type Bucket = { count: number; resetAtMs: number };
 const buckets = new Map<string, Bucket>();
@@ -35,7 +35,7 @@ function getIp(req: Request) {
 function rateLimit(key: string) {
   const now = Date.now();
   const windowMs = 60_000;
-  const limit = 20;
+  const limit = 30; // slightly higher for B2B demo
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAtMs <= now) {
     buckets.set(key, { count: 1, resetAtMs: now + windowMs });
@@ -47,30 +47,56 @@ function rateLimit(key: string) {
 }
 
 export async function POST(req: Request) {
+  // Optional API key gate (set LUNIA_API_KEY in production)
+  const requiredKey = process.env.LUNIA_API_KEY;
+  if (requiredKey) {
+    const headerKey =
+      req.headers.get("x-lunia-key") ||
+      req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    if (headerKey !== requiredKey) {
+      return NextResponse.json(
+        { error: "unauthorized", message: "유효한 API 키가 필요합니다." },
+        { status: 401 }
+      );
+    }
+  }
+
   const ip = getIp(req);
   const rl = rateLimit(ip);
   if (!rl.ok) {
-    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+    return NextResponse.json(
+      { error: "rate_limited", message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 429 }
+    );
   }
 
   try {
     const body = (await req.json()) as ReqBody;
     const cleanText = (body.text ?? "").trim();
 
-    if (cleanText.length < 10 || cleanText.length > 80_000) {
-      return NextResponse.json({ error: "invalid_text_length" }, { status: 400 });
+    if (cleanText.length < 10) {
+      return NextResponse.json(
+        { error: "invalid_text_length", message: "텍스트가 너무 짧습니다. (최소 10자)" },
+        { status: 400 }
+      );
+    }
+    if (cleanText.length > 80_000) {
+      return NextResponse.json(
+        { error: "invalid_text_length", message: "텍스트가 너무 깁니다. (최대 80,000자)" },
+        { status: 400 }
+      );
     }
 
     const masked = maskPersonalInfo(cleanText);
     const sha = crypto.createHash("sha256").update(masked).digest("hex").slice(0, 16);
     const started = Date.now();
 
-    // 1) 컴퓨터: 법령 인용 대조
+    // 1) Computer: law + article check
     const base = await analyzeTextForIssues(cleanText);
     let allIssues: Issue[] = [...base.issues];
     let contextEnabled = false;
 
-    // 2) 선택: 문맥·논리 (Claude – 키 연결 시)
+    // 2) Optional: context/logic (Claude)
     if (body.enableContextCheck) {
       const ctx = await checkContextLogic({
         text: cleanText,
@@ -107,10 +133,16 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json(result, {
-      headers: { "x-rate-limit-remaining": String(rl.remaining) },
+      headers: {
+        "x-rate-limit-remaining": String(rl.remaining),
+        "x-lunia-version": "0.2.0",
+      },
     });
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ error: "server_error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "server_error", message: "서버 오류가 발생했습니다." },
+      { status: 500 }
+    );
   }
 }
