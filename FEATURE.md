@@ -1,13 +1,22 @@
 # 제품 원칙
 
 1. **빨간 밑줄 + 각주**가 핵심이다. AI가 문장을 고쳐 쓰지 않는다.
-2. **단순 법 대조**는 컴퓨터(규칙 + 국가법령 API)가 한다.
-3. **문맥·논리 이상**만 Claude에 맡긴다. (`lib/context-check.ts`의 TODO)
+2. **단순 법·조문 대조**는 컴퓨터(규칙 + 국가법령 API)가 한다.
+3. **문맥·논리 이상**만 Claude에 맡긴다. (`lib/context-check.ts` – 구현 완료)
 
-## Claude 연결
+## 완료된 로직
 
-`.env.local`에 `CLAUDE_API_KEY`를 넣고 `lib/context-check.ts`의 TODO 블록만 구현하면 됩니다.
+- [x] 법령 인용 추출 (`extractCitations`)
+- [x] 법령명 존재 여부 확인 (국가법령 API)
+- [x] 조문 존재 여부 확인 (`checkArticleExists`)
+- [x] 빨간 밑줄 + 각주 하이라이트
+- [x] 점수 계산
+- [x] Claude 문맥·논리 검사 (API 키 있으면 자동)
+- [x] 개인정보 마스킹
+- [x] Rate limit
 
 ## 이후 유료 기능 후보
 
-PDF 검증 리포트 다운로드 (밑줄·각주·점수 포함) — B2B에 적합.
+- PDF 검증 리포트 다운로드 (밑줄·각주·점수 포함) — B2B에 적합
+- 판례 인용 검증
+- 배치 업로드 / 히스토리
