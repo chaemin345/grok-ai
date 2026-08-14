@@ -1,4 +1,4 @@
-import { searchLaw } from "./law-api";
+import { searchLaw, checkArticleExists } from "./law-api";
 import type { AnalyzeResult, Issue } from "./types";
 import crypto from "node:crypto";
 
@@ -117,6 +117,30 @@ export async function analyzeTextForIssues(
         article: cit.article,
         suggestion: "정확한 공식 법령명으로 확인하세요.",
       });
+      continue;
+    }
+
+    // 법령은 존재 → 조문 존재 여부 추가 검사
+    const articleCheck = await checkArticleExists(
+      exact.법령ID || exact.법령일련번호,
+      cit.article
+    );
+
+    if (!articleCheck.exists) {
+      issues.push({
+        id: crypto.randomUUID(),
+        ruleId: "ARTICLE_NOT_FOUND",
+        severity: "major",
+        originalText: cit.full,
+        start: cit.start,
+        end: cit.end,
+        reason:
+          articleCheck.detail ||
+          `「${cit.lawName}」 ${cit.article} — 해당 법령에서 조문을 찾을 수 없습니다. 조문 번호가 틀리거나 폐지된 조문일 수 있습니다.`,
+        lawName: cit.lawName,
+        article: cit.article,
+        suggestion: "해당 법령의 정확한 조문 번호를 확인하세요.",
+      });
     }
   }
 
@@ -139,9 +163,9 @@ export function buildHighlight(text: string, issues: Issue[]) {
   for (const issue of sorted) {
     num += 1;
     const safe = issue.originalText
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+      .replace(/&/g, "&")
+      .replace(/</g, "<")
+      .replace(/>/g, ">");
     const mark = `<mark class="lunia-error">${safe}</mark><sup class="fn-ref">[${num}]</sup>`;
     highlighted =
       highlighted.slice(0, issue.start) + mark + highlighted.slice(issue.end);
