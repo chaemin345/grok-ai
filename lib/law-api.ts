@@ -24,7 +24,10 @@ export async function searchLaw(query: string): Promise<LawSearchItem[]> {
   url.searchParams.set("search", "1");
 
   try {
-    const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
+    const res = await fetch(url.toString(), {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!res.ok) throw new Error(`lawSearch ${res.status}`);
     const data = await res.json();
     const list = data?.LawSearch?.law ?? data?.law ?? [];
@@ -42,16 +45,19 @@ export async function searchLaw(query: string): Promise<LawSearchItem[]> {
 export async function checkArticleExists(
   lawId: string,
   articleStr: string
-): Promise<{ exists: boolean; detail?: string }> {
+): Promise<{ exists: boolean; detail?: string; uncertain?: boolean }> {
   const oc = process.env.LAW_API_OC;
   if (!oc || !lawId || lawId === "000000") {
-    // mock 모드에서는 알려진 조문만 통과
     return mockArticleCheck(articleStr);
   }
 
   const jo = parseArticleToJO(articleStr);
   if (!jo) {
-    return { exists: true }; // 파싱 실패 시 보수적으로 통과
+    return {
+      exists: true,
+      uncertain: true,
+      detail: `${articleStr} 형식 파싱 실패로 조문 존재 여부를 확정할 수 없습니다.`,
+    };
   }
 
   try {
@@ -62,46 +68,54 @@ export async function checkArticleExists(
     url.searchParams.set("ID", lawId);
     url.searchParams.set("JO", jo);
 
-    const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
+    const res = await fetch(url.toString(), {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(8000),
+    });
+
     if (!res.ok) {
-      // 404 등이면 조문 없음으로 간주할 수 있으나, API 특성상 빈 응답일 수 있음
-      return { exists: true };
+      return {
+        exists: true,
+        uncertain: true,
+        detail: `조문 조회 API 응답 오류(${res.status}). 수동 확인을 권장합니다.`,
+      };
     }
 
     const data = await res.json();
-    // 응답에 조문 관련 필드가 있으면 존재
     const hasContent =
       data &&
       (data.법령 ||
         data.조문 ||
         data.Law ||
         data.조문내용 ||
-        Object.keys(data).length > 2);
+        (typeof data === "object" && Object.keys(data).length > 2));
 
     if (!hasContent) {
       return {
         exists: false,
-        detail: `법령 ID ${lawId} 에서 ${articleStr} 에 해당하는 조문을 찾을 수 없습니다.`,
+        detail: `법령 ID ${lawId} 에서 ${articleStr} 에 해당하는 조문을 찾을 수 없습니다. 조문 번호 오류 또는 폐지된 조문일 수 있습니다.`,
       };
     }
 
     return { exists: true };
   } catch (e) {
     console.error("[law-api] article check error", e);
-    return { exists: true }; // 오류 시 보수적으로 통과
+    return {
+      exists: true,
+      uncertain: true,
+      detail: `조문 조회 중 네트워크 오류. 수동 확인을 권장합니다.`,
+    };
   }
 }
 
 /** "제15조", "제15조의2", "제15조 제1항" 등 → JO 6자리 문자열 */
 function parseArticleToJO(article: string): string | null {
-  // 제N조 or 제N조의M
   const m = article.match(/제\s*(\d+)\s*조(?:의\s*(\d+))?/);
   if (!m) return null;
   const main = parseInt(m[1], 10);
   const sub = m[2] ? parseInt(m[2], 10) : 0;
   if (isNaN(main) || main < 1 || main > 9999) return null;
-  const jo = String(main).padStart(4, "0") + String(sub).padStart(2, "0");
-  return jo;
+  return String(main).padStart(4, "0") + String(sub).padStart(2, "0");
 }
 
 function mockSearch(query: string): LawSearchItem[] {
@@ -112,6 +126,8 @@ function mockSearch(query: string): LawSearchItem[] {
     "근로기준법",
     "개인정보 보호법",
     "저작권법",
+    "행정소송법",
+    "민사소송법",
   ];
   const hit = known.find((k) => query.includes(k) || k.includes(query));
   if (!hit) return [];
@@ -128,14 +144,17 @@ function mockSearch(query: string): LawSearchItem[] {
 function mockArticleCheck(articleStr: string): {
   exists: boolean;
   detail?: string;
+  uncertain?: boolean;
 } {
-  // mock에서는 극단적으로 큰 조문 번호만 실패 처리
   const m = articleStr.match(/제\s*(\d+)\s*조/);
   if (m && parseInt(m[1], 10) > 2000) {
     return {
       exists: false,
       detail: `mock: ${articleStr} 은(는) 존재하지 않는 조문으로 간주합니다.`,
     };
+  }
+  if (m && parseInt(m[1], 10) === 0) {
+    return { exists: false, detail: `제0조는 존재하지 않습니다.` };
   }
   return { exists: true };
 }
