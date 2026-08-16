@@ -1,6 +1,6 @@
 {
   "name": "lunia-ai",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,5 +17,8 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
