@@ -35,7 +35,7 @@ function getIp(req: Request) {
 function rateLimit(key: string) {
   const now = Date.now();
   const windowMs = 60_000;
-  const limit = 30; // slightly higher for B2B demo
+  const limit = 40;
   const bucket = buckets.get(key);
   if (!bucket || bucket.resetAtMs <= now) {
     buckets.set(key, { count: 1, resetAtMs: now + windowMs });
@@ -47,7 +47,6 @@ function rateLimit(key: string) {
 }
 
 export async function POST(req: Request) {
-  // Optional API key gate (set LUNIA_API_KEY in production)
   const requiredKey = process.env.LUNIA_API_KEY;
   if (requiredKey) {
     const headerKey =
@@ -65,7 +64,10 @@ export async function POST(req: Request) {
   const rl = rateLimit(ip);
   if (!rl.ok) {
     return NextResponse.json(
-      { error: "rate_limited", message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." },
+      {
+        error: "rate_limited",
+        message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+      },
       { status: 429 }
     );
   }
@@ -76,27 +78,35 @@ export async function POST(req: Request) {
 
     if (cleanText.length < 10) {
       return NextResponse.json(
-        { error: "invalid_text_length", message: "텍스트가 너무 짧습니다. (최소 10자)" },
+        {
+          error: "invalid_text_length",
+          message: "텍스트가 너무 짧습니다. (최소 10자)",
+        },
         { status: 400 }
       );
     }
     if (cleanText.length > 80_000) {
       return NextResponse.json(
-        { error: "invalid_text_length", message: "텍스트가 너무 깁니다. (최대 80,000자)" },
+        {
+          error: "invalid_text_length",
+          message: "텍스트가 너무 깁니다. (최대 80,000자)",
+        },
         { status: 400 }
       );
     }
 
     const masked = maskPersonalInfo(cleanText);
-    const sha = crypto.createHash("sha256").update(masked).digest("hex").slice(0, 16);
+    const sha = crypto
+      .createHash("sha256")
+      .update(masked)
+      .digest("hex")
+      .slice(0, 16);
     const started = Date.now();
 
-    // 1) Computer: law + article check
     const base = await analyzeTextForIssues(cleanText);
     let allIssues: Issue[] = [...base.issues];
     let contextEnabled = false;
 
-    // 2) Optional: context/logic (Claude)
     if (body.enableContextCheck) {
       const ctx = await checkContextLogic({
         text: cleanText,
@@ -118,6 +128,7 @@ export async function POST(req: Request) {
       timestamp: new Date().toISOString(),
       maskedPreview: base.maskedPreview,
       contextCheckEnabled: contextEnabled,
+      version: "1.0.0",
     };
 
     console.info(
@@ -129,13 +140,14 @@ export async function POST(req: Request) {
         score: result.score,
         issueCount: allIssues.length,
         contextCheckEnabled: contextEnabled,
+        version: "1.0.0",
       })
     );
 
     return NextResponse.json(result, {
       headers: {
         "x-rate-limit-remaining": String(rl.remaining),
-        "x-lunia-version": "0.2.0",
+        "x-lunia-version": "1.0.0",
       },
     });
   } catch (e) {
