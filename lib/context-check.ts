@@ -54,6 +54,7 @@ function buildPrompt(text: string, existingIssues: Issue[]): string {
 3. 단순 맞춤법/띄어쓰기 오류는 무시하세요.
 4. 법령 존재 여부는 이미 다른 시스템이 검사했으므로 건드리지 마세요.
 5. 반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 설명 금지.
+6. start/end 인덱스는 반드시 정확한 0-based 문자 위치여야 합니다.
 
 기존 이슈 (제외 참고):
 ${existingRanges}
@@ -82,7 +83,6 @@ function parseFindings(
   originalText: string
 ): ContextFinding[] {
   try {
-    // Claude가 markdown code block으로 감쌀 수 있음
     let jsonStr = rawContent.trim();
     const codeBlock = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeBlock) {
@@ -112,7 +112,6 @@ function parseFindings(
           ? Math.floor(item.end)
           : -1;
 
-      // start/end가 없거나 잘못된 경우 originalText로 위치 찾기
       if (start < 0 || end <= start || end > originalText.length) {
         const idx = originalText.indexOf(item.originalText);
         if (idx === -1) continue;
@@ -120,7 +119,6 @@ function parseFindings(
         end = idx + item.originalText.length;
       }
 
-      // 범위 검증
       if (start < 0 || end > originalText.length || end <= start) continue;
 
       const severity =
@@ -170,6 +168,7 @@ export async function checkContextLogic(
         temperature: 0.2,
         messages: [{ role: "user", content: prompt }],
       }),
+      signal: AbortSignal.timeout(25000),
     });
 
     if (!res.ok) {
