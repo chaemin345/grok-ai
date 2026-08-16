@@ -4,22 +4,26 @@
 2. **단순 법·조문 대조**는 컴퓨터(규칙 + 국가법령 API)가 한다.
 3. **문맥·논리 이상**만 Claude에 맡긴다.
 
-완료된 로직 (v0.2)
+완료된 로직 (v1.0)
 
 - [x] 법령 인용 추출 (`extractCitations`)
 - [x] 법령명 존재 여부 확인 (국가법령 API)
 - [x] 조문 존재 여부 확인 (`checkArticleExists`)
 - [x] 빨간 밑줄 + 각주 하이라이트
-- [x] 점수 계산 + Critical/Major/Minor 요약
+- [x] 점수 계산 + Critical/Major/Minor/Info 요약
 - [x] Claude 문맥·논리 검사
 - [x] 개인정보 마스킹
 - [x] Rate limit + optional API key gate
 - [x] 비즈니스 UI (Lunia.ai 브랜딩)
 - [x] PDF/인쇄용 검증 리포트 다운로드
 - [x] 샘플 텍스트 / 이슈 테이블
+- [x] HTML 이스케이프 보안 (XSS 방지)
+- [x] 병렬 API 호출 (성능)
+- [x] 조문 불확실 시 Info 등급
+- [x] 면책 고지 강화
+- [x] Timeout / 에러 핸들링
 
 ## 비즈니스 포지셔닝
 
 - **타깃**: 법무법인, 기업 법무팀, 법률 스타트업 (B2B)
 - **유료 전환 후보**: 배치 업로드, 히스토리, 판례 검증, 팀 시팅, SLA, 자주 사용 유저
-
