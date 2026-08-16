@@ -1,12 +1,9 @@
 import { searchLaw, checkArticleExists } from "./law-api";
 import type { AnalyzeResult, Issue } from "./types";
+import { escapeHtml, maskPersonalInfo } from "./utils";
 import crypto from "node:crypto";
 
-export function maskPersonalInfo(text: string): string {
-  return text
-    .replace(/\d{6}-\d{7}/g, "XXXXXX-XXXXXXX")
-    .replace(/010-\d{4}-\d{4}/g, "010-XXXX-XXXX");
-}
+export { maskPersonalInfo };
 
 /** 법령 인용 추출 (정확도 우선) */
 export function extractCitations(text: string) {
@@ -86,25 +83,50 @@ export function extractCitations(text: string) {
   return [...map.values()].sort((a, b) => a.start - b.start);
 }
 
-/** 틀린 법령 인용 → 이슈 목록 (밑줄/각주용) */
+/** 틀린 법령 인용 → 이슈 목록 (밑줄/각주용) - 병렬 처리 */
 export async function analyzeTextForIssues(
   text: string
 ): Promise<{ issues: Issue[]; maskedPreview: string }> {
   const issues: Issue[] = [];
   const citations = extractCitations(text);
 
-  for (const cit of citations) {
-    const searchResults = await searchLaw(cit.lawName);
-    const exact = searchResults.find(
-      (r) =>
-        r.법령명한글 === cit.lawName ||
-        r.법령약칭명 === cit.lawName ||
-        (r.법령명한글 &&
-          (r.법령명한글.includes(cit.lawName) ||
-            cit.lawName.includes(r.법령명한글)))
-    );
+  // 병렬로 법령 검색 + 조문 검사 (유료급 속도)
+  const checks = await Promise.all(
+    citations.map(async (cit) => {
+      const searchResults = await searchLaw(cit.lawName);
+      const exact = searchResults.find(
+        (r) =>
+          r.법령명한글 === cit.lawName ||
+          r.법령약칭명 === cit.lawName ||
+          (r.법령명한글 &&
+            (r.법령명한글.includes(cit.lawName) ||
+              cit.lawName.includes(r.법령명한글)))
+      );
 
-    if (!exact) {
+      if (!exact) {
+        return {
+          type: "LAW_NOT_FOUND" as const,
+          cit,
+        };
+      }
+
+      const articleCheck = await checkArticleExists(
+        exact.법령ID || exact.법령일련번호,
+        cit.article
+      );
+
+      return {
+        type: "CHECKED" as const,
+        cit,
+        exact,
+        articleCheck,
+      };
+    })
+  );
+
+  for (const result of checks) {
+    if (result.type === "LAW_NOT_FOUND") {
+      const { cit } = result;
       issues.push({
         id: crypto.randomUUID(),
         ruleId: "LAW_NOT_FOUND",
@@ -120,12 +142,7 @@ export async function analyzeTextForIssues(
       continue;
     }
 
-    // 법령은 존재 → 조문 존재 여부 추가 검사
-    const articleCheck = await checkArticleExists(
-      exact.법령ID || exact.법령일련번호,
-      cit.article
-    );
-
+    const { cit, articleCheck } = result;
     if (!articleCheck.exists) {
       issues.push({
         id: crypto.randomUUID(),
@@ -141,6 +158,22 @@ export async function analyzeTextForIssues(
         article: cit.article,
         suggestion: "해당 법령의 정확한 조문 번호를 확인하세요.",
       });
+    } else if (articleCheck.uncertain) {
+      // 불확실한 경우 info 수준으로 표시 (과도한 critical 방지)
+      issues.push({
+        id: crypto.randomUUID(),
+        ruleId: "ARTICLE_UNCERTAIN",
+        severity: "info",
+        originalText: cit.full,
+        start: cit.start,
+        end: cit.end,
+        reason:
+          articleCheck.detail ||
+          `「${cit.lawName}」 ${cit.article} — 조문 존재 여부를 자동으로 확정할 수 없습니다. 수동 확인을 권장합니다.`,
+        lawName: cit.lawName,
+        article: cit.article,
+        suggestion: "국가법령정보센터에서 직접 확인해 주세요.",
+      });
     }
   }
 
@@ -150,7 +183,7 @@ export async function analyzeTextForIssues(
   };
 }
 
-/** 이슈 → 하이라이트 HTML + 각주 */
+/** 이슈 → 하이라이트 HTML + 각주 (올바른 이스케이프 적용) */
 export function buildHighlight(text: string, issues: Issue[]) {
   const sorted = [...issues]
     .filter((i) => i.end > i.start)
@@ -162,10 +195,7 @@ export function buildHighlight(text: string, issues: Issue[]) {
 
   for (const issue of sorted) {
     num += 1;
-    const safe = issue.originalText
-      .replace(/&/g, "&")
-      .replace(/</g, "<")
-      .replace(/>/g, ">");
+    const safe = escapeHtml(issue.originalText);
     const mark = `<mark class="lunia-error">${safe}</mark><sup class="fn-ref">[${num}]</sup>`;
     highlighted =
       highlighted.slice(0, issue.start) + mark + highlighted.slice(issue.end);
@@ -182,7 +212,9 @@ export function buildHighlight(text: string, issues: Issue[]) {
   });
 
   return {
-    highlightedHtml: highlighted.replace(/\n/g, "<br/>"),
+    highlightedHtml: highlighted
+      .replace(/\n/g, "<br/>")
+      .replace(/\r/g, ""),
     footnotes,
   };
 }
@@ -191,7 +223,8 @@ export function calcScore(issues: Issue[]): number {
   const penalty = issues.reduce((s, i) => {
     if (i.severity === "critical") return s + 25;
     if (i.severity === "major") return s + 15;
-    return s + 5;
+    if (i.severity === "minor") return s + 5;
+    return s + 1;
   }, 0);
   return Math.max(0, Math.min(100, 100 - penalty));
 }
