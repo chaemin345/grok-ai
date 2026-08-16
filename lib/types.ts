@@ -22,4 +22,5 @@ export interface AnalyzeResult {
   timestamp: string;
   maskedPreview: string;
   contextCheckEnabled?: boolean;
+  version?: string;
 }
