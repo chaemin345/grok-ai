@@ -183,22 +183,30 @@ export async function analyzeTextForIssues(
   };
 }
 
-/** 이슈 → 하이라이트 HTML + 각주 (올바른 이스케이프 적용) */
+/** 이슈 → 하이라이트 HTML + 각주 (올바른 이스케이프 + 겹침 구간 스킵) */
 export function buildHighlight(text: string, issues: Issue[]) {
+  // 뒤에서부터 삽입하되, 이미 처리한 구간과 겹치면 스킵 (인덱스 붕괴 방지)
   const sorted = [...issues]
-    .filter((i) => i.end > i.start)
-    .sort((a, b) => b.start - a.start);
+    .filter((i) => i.end > i.start && i.start >= 0 && i.end <= text.length)
+    .sort((a, b) => b.start - a.start || b.end - a.end);
 
+  const used: { start: number; end: number }[] = [];
   let highlighted = text;
   const footnotes: AnalyzeResult["footnotes"] = [];
   let num = 0;
 
   for (const issue of sorted) {
+    const overlaps = used.some(
+      (u) => issue.start < u.end && issue.end > u.start
+    );
+    if (overlaps) continue;
+
     num += 1;
-    const safe = escapeHtml(issue.originalText);
+    const safe = escapeHtml(text.slice(issue.start, issue.end));
     const mark = `<mark class="lunia-error">${safe}</mark><sup class="fn-ref">[${num}]</sup>`;
     highlighted =
       highlighted.slice(0, issue.start) + mark + highlighted.slice(issue.end);
+    used.push({ start: issue.start, end: issue.end });
     footnotes.unshift({
       number: num,
       reason: issue.reason,
