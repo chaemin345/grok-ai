@@ -128,8 +128,23 @@ function mockSearch(query: string): LawSearchItem[] {
     "저작권법",
     "행정소송법",
     "민사소송법",
+    "형사소송법",
+    "독점규제 및 공정거래에 관한 법률",
+    "자본시장과 금융투자업에 관한 법률",
+    "전자상거래 등에서의 소비자보호에 관한 법률",
+    "정보통신망 이용촉진 및 정보보호 등에 관한 법률",
+    "약관의 규제에 관한 법률",
+    "하도급거래 공정화에 관한 법률",
+    "상표법",
+    "특허법",
+    "주택임대차보호법",
+    "상가건물 임대차보호법",
   ];
-  const hit = known.find((k) => query.includes(k) || k.includes(query));
+  const q = query.replace(/\s+/g, "").toLowerCase();
+  const hit = known.find((k) => {
+    const kn = k.replace(/\s+/g, "").toLowerCase();
+    return q.includes(kn) || kn.includes(q) || query.includes(k) || k.includes(query);
+  });
   if (!hit) return [];
   return [
     {
