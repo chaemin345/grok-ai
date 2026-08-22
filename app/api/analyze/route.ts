@@ -12,7 +12,9 @@ import {
 } from "@/lib/context-check";
 import type { AnalyzeResult, Issue } from "@/lib/types";
 
-type ReqBody = { text: string; enableContextCheck?: boolean; apiKey?: string };
+const VERSION = "1.1.0";
+
+type ReqBody = { text?: unknown; enableContextCheck?: unknown; apiKey?: unknown };
 
 type Bucket = { count: number; resetAtMs: number };
 const buckets = new Map<string, Bucket>();
@@ -73,8 +75,25 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = (await req.json()) as ReqBody;
-    const cleanText = (body.text ?? "").trim();
+    let body: ReqBody;
+    try {
+      body = (await req.json()) as ReqBody;
+    } catch {
+      return NextResponse.json(
+        { error: "invalid_json", message: "요청 본문이 올바른 JSON이 아닙니다." },
+        { status: 400 }
+      );
+    }
+
+    if (typeof body.text !== "string") {
+      return NextResponse.json(
+        { error: "invalid_text", message: "text 필드는 문자열이어야 합니다." },
+        { status: 400 }
+      );
+    }
+
+    const cleanText = body.text.trim();
+    const enableContextCheck = Boolean(body.enableContextCheck);
 
     if (cleanText.length < 10) {
       return NextResponse.json(
@@ -107,7 +126,7 @@ export async function POST(req: Request) {
     let allIssues: Issue[] = [...base.issues];
     let contextEnabled = false;
 
-    if (body.enableContextCheck) {
+    if (enableContextCheck) {
       const ctx = await checkContextLogic({
         text: cleanText,
         existingIssues: base.issues,
@@ -128,7 +147,7 @@ export async function POST(req: Request) {
       timestamp: new Date().toISOString(),
       maskedPreview: base.maskedPreview,
       contextCheckEnabled: contextEnabled,
-      version: "1.0.0",
+      version: VERSION,
     };
 
     console.info(
@@ -140,14 +159,14 @@ export async function POST(req: Request) {
         score: result.score,
         issueCount: allIssues.length,
         contextCheckEnabled: contextEnabled,
-        version: "1.0.0",
+        version: VERSION,
       })
     );
 
     return NextResponse.json(result, {
       headers: {
         "x-rate-limit-remaining": String(rl.remaining),
-        "x-lunia-version": "1.0.0",
+        "x-lunia-version": VERSION,
       },
     });
   } catch (e) {
